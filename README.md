@@ -173,6 +173,11 @@ dist/      빌드 결과물 (service 실행 파일, 배포용 .streamDeckPlugin)
 
 ### 설치 파일 만들기 (이 PC에서)
 
+`scripts\build-package.cmd`를 더블클릭합니다. 끝나면 결과를 보여 주고 아무 키나 누를 때까지 창이 남아 있습니다.
+(`build-package.ps1`을 직접 더블클릭하면 Windows가 실행하지 않고 메모장으로 엽니다.)
+
+터미널에서 실행하려면:
+
 ```bash
 powershell -ExecutionPolicy Bypass -File scripts/build-package.ps1
 ```
