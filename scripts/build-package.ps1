@@ -1,5 +1,6 @@
 ﻿# 다른 PC에 설치할 수 있는 배포 패키지를 만듭니다.
-#   결과: dist\PttyPCMonitor-Setup\ 폴더와 dist\PttyPCMonitor-Setup.zip
+#   결과: dist\PttyPCMonitor-Setup-v<버전>\ 폴더와 dist\PttyPCMonitor-Setup-v<버전>.zip
+#         버전은 plugin\...sdPlugin\manifest.json 의 "Version" (예: 1.0.0.0 -> v1.0.0, GitHub 태그와 같은 형식)
 #   내용: Stream Deck 플러그인(.streamDeckPlugin), 센서 서비스, 설치/제거 스크립트, INSTALL(.ko).txt,
 #         LICENSE / THIRD-PARTY-NOTICES.md / licenses\ (패키지 루트, 플러그인 안, 서비스 폴더에 모두 포함)
 # 사용: powershell -ExecutionPolicy Bypass -File scripts\build-package.ps1
@@ -8,10 +9,22 @@ $ErrorActionPreference = 'Stop'
 
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 $dist = Join-Path $root 'dist'
-$package = Join-Path $dist 'PttyPCMonitor-Setup'
 $sdPlugin = Join-Path $root 'plugin\com.hollobar.ptty-pc-monitor.sdPlugin'
 
+# The release version comes from the plugin manifest: Stream Deck uses four parts (1.0.0.0), release tags use
+# three (v1.0.0), so the fourth part is dropped.
+$manifest = Get-Content (Join-Path $sdPlugin 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$versionParts = "$($manifest.Version)".Split('.')
+if ($versionParts.Count -lt 3 -or ($versionParts | Where-Object { $_ -notmatch '^\d+$' })) {
+    throw "manifest.json 의 Version 형식이 올바르지 않습니다: '$($manifest.Version)' (예: 1.0.0.0)"
+}
+$version = 'v' + ($versionParts[0..2] -join '.')
+$packageName = "PttyPCMonitor-Setup-$version"
+$package = Join-Path $dist $packageName
+
 function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
+
+Step "버전 $version ($packageName.zip)"
 
 # This project's license plus the full license texts of the bundled third-party components. They ship with every
 # distributed part (zip root, the .streamDeckPlugin, the installed service folder), since each can travel on its own.
@@ -73,7 +86,7 @@ foreach ($name in 'install-service.cmd', 'install-service.ps1', 'uninstall-servi
 }
 
 Step '압축'
-$zip = Join-Path $dist 'PttyPCMonitor-Setup.zip'
+$zip = Join-Path $dist "$packageName.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 # Windows' bsdtar instead of Compress-Archive / ZipFile: in Windows PowerShell 5.1 those write "\" path
 # separators, which other unzip tools mangle.

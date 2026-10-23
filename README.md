@@ -183,8 +183,9 @@ powershell -ExecutionPolicy Bypass -File scripts/build-package.ps1
 ```
 
 - 서비스, helper, 플러그인을 모두 다시 빌드합니다. 결과물은 아래 두 가지입니다.
-  - `dist/PttyPCMonitor-Setup/` 폴더
-  - `dist/PttyPCMonitor-Setup.zip` (GitHub Releases에 올릴 파일)
+  - `dist/PttyPCMonitor-Setup-v1.0.0/` 폴더
+  - `dist/PttyPCMonitor-Setup-v1.0.0.zip` (GitHub Releases에 올릴 파일)
+- 파일 이름의 버전은 `plugin/com.hollobar.ptty-pc-monitor.sdPlugin/manifest.json`의 `"Version"`에서 자동으로 붙습니다 (`1.0.0.0` → `v1.0.0`). 새 버전을 낼 때는 manifest의 버전만 올리면 됩니다.
 - 코드를 바꾼 뒤에는 이 명령을 다시 실행하면 됩니다.
 - Release 빌드에는 디버그 정보와 개발 PC의 폴더 경로가 들어가지 않습니다.
 
