@@ -5,6 +5,11 @@ node_modules/
 *.sdPlugin/bin
 *.sdPlugin/logs
 
+# Copied in by scripts/build-package.ps1 before packing (originals live in the repository root)
+*.sdPlugin/LICENSE
+*.sdPlugin/THIRD-PARTY-NOTICES.md
+*.sdPlugin/licenses/
+
 # Generated from locales/*.json by rollup.config.mjs
 *.sdPlugin/ko.json
 *.sdPlugin/en.json

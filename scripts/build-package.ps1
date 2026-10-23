@@ -1,6 +1,7 @@
 ﻿# 다른 PC에 설치할 수 있는 배포 패키지를 만듭니다.
 #   결과: dist\PttyPCMonitor-Setup\ 폴더와 dist\PttyPCMonitor-Setup.zip
-#   내용: Stream Deck 플러그인(.streamDeckPlugin), 센서 서비스, 설치/제거 스크립트, INSTALL(.ko).txt
+#   내용: Stream Deck 플러그인(.streamDeckPlugin), 센서 서비스, 설치/제거 스크립트, INSTALL(.ko).txt,
+#         LICENSE / THIRD-PARTY-NOTICES.md / licenses\ (패키지 루트, 플러그인 안, 서비스 폴더에 모두 포함)
 # 사용: powershell -ExecutionPolicy Bypass -File scripts\build-package.ps1
 
 $ErrorActionPreference = 'Stop'
@@ -11,6 +12,13 @@ $package = Join-Path $dist 'PttyPCMonitor-Setup'
 $sdPlugin = Join-Path $root 'plugin\com.hollobar.ptty-pc-monitor.sdPlugin'
 
 function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
+
+# This project's license plus the full license texts of the bundled third-party components. They ship with every
+# distributed part (zip root, the .streamDeckPlugin, the installed service folder), since each can travel on its own.
+$legalFiles = @((Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD-PARTY-NOTICES.md'), (Join-Path $root 'licenses'))
+function Copy-Legal($destination) {
+    foreach ($item in $legalFiles) { Copy-Item $item $destination -Recurse -Force }
+}
 function Run($exe, [string[]]$arguments) {
     & $exe @arguments
     if ($LASTEXITCODE -ne 0) { throw "$exe $($arguments -join ' ') 실패 (exit $LASTEXITCODE)" }
@@ -32,6 +40,8 @@ try {
     Run npm @('run', 'build', '--silent')
     # Old development logs shouldn't ship.
     Remove-Item (Join-Path $sdPlugin 'logs') -Recurse -Force -ErrorAction SilentlyContinue
+    # Copies only for packing (ignored by git; see plugin/.gitignore).
+    Copy-Legal $sdPlugin
     Run npx @('streamdeck', 'pack', 'com.hollobar.ptty-pc-monitor.sdPlugin', '--output', $dist, '--force', '--no-file-list')
 }
 finally {
@@ -46,7 +56,9 @@ if (Test-Path $package) { Remove-Item $package -Recurse -Force }
 New-Item -ItemType Directory -Force (Join-Path $package 'service') | Out-Null
 Copy-Item (Join-Path $dist 'com.hollobar.ptty-pc-monitor.streamDeckPlugin') $package
 Copy-Item (Join-Path $dist 'service\PcMonitorService.exe'), (Join-Path $dist 'service\appsettings.json') (Join-Path $package 'service')
-Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.md') $package
+Copy-Legal $package
+# install-service copies the service folder to Program Files, so the notices end up next to the installed exe.
+Copy-Legal (Join-Path $package 'service')
 foreach ($name in 'install-service.cmd', 'install-service.ps1', 'uninstall-service.cmd', 'uninstall-service.ps1', 'INSTALL.txt', 'INSTALL.ko.txt') {
     $source = Join-Path $PSScriptRoot $name
     $dest = Join-Path $package $name
