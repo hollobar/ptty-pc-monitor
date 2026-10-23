@@ -1,0 +1,11 @@
+# Node.js
+node_modules/
+
+# Stream Deck files
+*.sdPlugin/bin
+*.sdPlugin/logs
+
+# Generated from locales/*.json by rollup.config.mjs
+*.sdPlugin/ko.json
+*.sdPlugin/en.json
+*.sdPlugin/ui/locales.js
