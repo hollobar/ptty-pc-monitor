@@ -1,0 +1,11 @@
+# .NET build output
+**/bin/
+**/obj/
+.vs/
+*.user
+
+# Release packages (built by scripts/build-package.ps1; attach to GitHub Releases instead)
+dist/
+
+# Node (see also plugin/.gitignore)
+node_modules/
