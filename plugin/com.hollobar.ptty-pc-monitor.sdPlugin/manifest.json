@@ -1,0 +1,67 @@
+{
+	"Name": "Ptty PC Monitor",
+	"Version": "1.0.0.0",
+	"Author": "hollobar",
+	"Actions": [
+		{
+			"Name": "Sensor",
+			"UUID": "com.hollobar.ptty-pc-monitor.sensor",
+			"Icon": "imgs/actions/sensor/icon",
+			"Tooltip": "Shows CPU/GPU temperature and load, RAM, internet speed or fan RPM.",
+			"PropertyInspectorPath": "ui/sensor.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/sensor/key",
+					"ShowTitle": false
+				}
+			],
+			"UserTitleEnabled": false
+		},
+		{
+			"Name": "Monitor Brightness",
+			"UUID": "com.hollobar.ptty-pc-monitor.brightness",
+			"Icon": "imgs/actions/brightness/icon",
+			"Tooltip": "Adjusts monitor brightness and contrast with a Stream Deck + dial (DDC/CI).",
+			"PropertyInspectorPath": "ui/brightness.html",
+			"Controllers": [
+				"Encoder"
+			],
+			"Encoder": {
+				"layout": "$B1",
+				"Icon": "imgs/actions/brightness/icon",
+				"TriggerDescription": {
+					"Rotate": "Adjust",
+					"Push": "Brightness ↔ contrast",
+					"Touch": "Re-read current values"
+				}
+			},
+			"States": [
+				{
+					"Image": "imgs/actions/brightness/key"
+				}
+			]
+		}
+	],
+	"Category": "Ptty PC Monitor",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Shows CPU/GPU temperature and load, RAM usage, internet speed and fan RPM on keys, and adjusts monitor brightness and contrast with Stream Deck + dials. Reading sensors requires the Ptty PC Monitor sensor service to be installed as well.",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 3,
+	"Software": {
+		"MinimumVersion": "7.1"
+	},
+	"OS": [
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "24"
+	},
+	"UUID": "com.hollobar.ptty-pc-monitor"
+}

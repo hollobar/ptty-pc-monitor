@@ -1,0 +1,397 @@
+<!doctype html>
+<html>
+	<head>
+		<title>Ptty PC Monitor Settings</title>
+		<meta charset="utf-8" />
+		<!-- Bundled copy of sdpi-components v4.0.1 so settings work offline (was the sdpi-components.dev CDN). -->
+		<script src="vendor/sdpi-components.js"></script>
+		<script src="locales.js"></script>
+		<script src="i18n.js"></script>
+		<style>
+			/* Hidden until translated, so the untranslated markup doesn't flash. */
+			body.pending {
+				visibility: hidden;
+			}
+			.section {
+				margin: 14px 0 4px 8px;
+				color: #9ca3af;
+				font-size: 9pt;
+				font-weight: 600;
+			}
+			.pm-button {
+				padding: 3px 10px;
+				border: 1px solid #555;
+				border-radius: 3px;
+				background: #3d3d3d;
+				color: #d8d8d8;
+				cursor: pointer;
+				font-size: 9pt;
+			}
+			.pm-button:hover {
+				color: #fff;
+			}
+			.hint {
+				margin: 2px 0 0;
+				color: #888;
+				font-size: 8pt;
+			}
+			.notice {
+				margin: 6px 8px 8px;
+				padding: 8px 10px;
+				border: 1px solid #6b5a1e;
+				border-radius: 4px;
+				background: #3a3320;
+				color: #e8dcb0;
+				font-size: 9pt;
+				line-height: 1.45;
+			}
+			.notice strong {
+				display: block;
+				margin-bottom: 3px;
+				color: #fde68a;
+			}
+			.notice p {
+				margin: 0 0 6px;
+			}
+		</style>
+	</head>
+
+	<body class="pending">
+		<sdpi-item data-i18n-label="pi.metric">
+			<sdpi-select id="metric" setting="metric" default="cpu-temp">
+				<option value="cpu-temp" data-i18n="opt.cpuTemp"></option>
+				<option value="cpu-load" data-i18n="opt.cpuLoad"></option>
+				<option value="gpu-temp" data-i18n="opt.gpuTemp"></option>
+				<option value="gpu-load" data-i18n="opt.gpuLoad"></option>
+				<option value="ram" data-i18n="opt.ram"></option>
+				<option value="net-down" data-i18n="opt.netDown"></option>
+				<option value="net-up" data-i18n="opt.netUp"></option>
+				<option value="fan" data-i18n="opt.fan"></option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<!-- Shown for CPU temperature / fans when the service reports that the PawnIO driver is missing. -->
+		<div id="pawnio-notice" class="notice" style="display: none">
+			<strong data-i18n="pi.pawnioTitle"></strong>
+			<p data-i18n="pi.pawnioBody"></p>
+			<button id="open-pawnio" class="pm-button" data-i18n="pi.pawnioButton"></button>
+		</div>
+
+		<sdpi-item id="fan-item" data-i18n-label="pi.fan" style="display: none">
+			<sdpi-select
+				setting="fanId"
+				datasource="getFans"
+				hot-reload
+				data-i18n-loading="pi.loading"
+				data-i18n-placeholder="pi.fanPlaceholder"
+			></sdpi-select>
+		</sdpi-item>
+
+		<div id="ram-items" style="display: none">
+			<sdpi-item data-i18n-label="pi.ramPrimary">
+				<sdpi-select setting="ramPrimary" default="percent">
+					<option value="percent" data-i18n="opt.ramPercent"></option>
+					<option value="gb" data-i18n="opt.ramGb"></option>
+				</sdpi-select>
+			</sdpi-item>
+			<sdpi-item data-i18n-label="pi.showDetail">
+				<sdpi-checkbox setting="showDetail" default="true" data-i18n-label="pi.showDetailDesc"></sdpi-checkbox>
+			</sdpi-item>
+		</div>
+
+		<sdpi-item id="fan-display-item" data-i18n-label="pi.fanDisplay" style="display: none">
+			<sdpi-select setting="fanDisplay" default="rpm">
+				<option value="rpm" data-i18n="opt.fanRpm"></option>
+				<option value="percent" data-i18n="opt.fanPercent"></option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.name">
+			<sdpi-textfield setting="label" data-i18n-placeholder="pi.namePlaceholder" maxlength="12"></sdpi-textfield>
+		</sdpi-item>
+
+		<div class="section" data-i18n="pi.sectionText"></div>
+
+		<sdpi-item data-i18n-label="pi.labelFont">
+			<sdpi-select setting="labelFont" datasource="getFonts" data-i18n-loading="pi.loading" default=""></sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.labelSize">
+			<div class="pm-range" data-setting="labelSize" data-min="8" data-max="60" data-step="1" data-default="21" data-optional></div>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.valueFont">
+			<sdpi-select setting="valueFont" datasource="getFonts" data-i18n-loading="pi.loading" default=""></sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.valueSize">
+			<div class="pm-range" data-setting="valueSize" data-min="10" data-max="100" data-step="1" data-default="50" data-optional></div>
+		</sdpi-item>
+
+		<!-- RAM only: the second line ("16.3 / 32GB") can have its own size instead of scaling with the value. -->
+		<sdpi-item id="detail-size-item" data-i18n-label="pi.detailSize" style="display: none">
+			<div class="pm-range" data-setting="detailSize" data-min="6" data-max="60" data-step="1" data-default="17" data-optional></div>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.layout">
+			<div>
+				<button id="open-layout" class="pm-button" data-i18n="pi.openLayout"></button>
+				<button id="reset-layout" class="pm-button" data-i18n="pi.resetLayout"></button>
+				<p class="hint" data-i18n="pi.layoutHint"></p>
+			</div>
+		</sdpi-item>
+
+		<div class="section" data-i18n="pi.sectionColor"></div>
+
+		<sdpi-item data-i18n-label="pi.labelColor">
+			<sdpi-color setting="labelColor" default="#e5e7eb"></sdpi-color>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.autoColor">
+			<sdpi-checkbox id="auto-color" setting="autoColor" default="true" data-i18n-label="pi.autoColorDesc"></sdpi-checkbox>
+		</sdpi-item>
+
+		<div id="manual-colors" style="display: none">
+			<sdpi-item data-i18n-label="pi.valueColor">
+				<sdpi-color setting="valueColor" default="#4ade80"></sdpi-color>
+			</sdpi-item>
+			<sdpi-item data-i18n-label="pi.lineColor">
+				<sdpi-color setting="lineColor" default="#4ade80"></sdpi-color>
+			</sdpi-item>
+			<sdpi-item data-i18n-label="pi.fillColor">
+				<sdpi-color setting="fillColor" default="#4ade80"></sdpi-color>
+			</sdpi-item>
+		</div>
+
+		<sdpi-item data-i18n-label="pi.fillOpacity">
+			<div class="pm-range" data-setting="fillOpacity" data-min="0" data-max="100" data-step="1" data-default="18"></div>
+		</sdpi-item>
+
+		<div class="section" data-i18n="pi.sectionGraph"></div>
+
+		<!-- Shown only for metrics with both units; option texts are set per metric by syncMetric(). -->
+		<sdpi-item id="graph-unit-item" data-i18n-label="pi.graphUnit" style="display: none">
+			<sdpi-select id="graph-unit" setting="graphUnit">
+				<option value="percent"></option>
+				<option value="actual"></option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<!-- data-min / data-max are set by syncMetric(): 0–100 in percent units, no limits for actual values. -->
+		<sdpi-item data-i18n-label="pi.graphMin">
+			<div class="pm-number" id="graph-min" data-setting="graphMin" data-step="1"></div>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.graphMax">
+			<div class="pm-number" id="graph-max" data-setting="graphMax" data-step="1"></div>
+		</sdpi-item>
+
+		<sdpi-item label="">
+			<p class="hint" id="graph-hint"></p>
+		</sdpi-item>
+
+		<div class="section" data-i18n="pi.sectionBackground"></div>
+
+		<sdpi-item data-i18n-label="pi.bgColor">
+			<sdpi-color setting="bgColor" default="#0d1117"></sdpi-color>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.bgImage">
+			<sdpi-file setting="bgImage" accept="image/png,image/jpeg,image/bmp,image/gif,image/webp" data-i18n-label="pi.browse"></sdpi-file>
+		</sdpi-item>
+
+		<sdpi-item label="">
+			<button id="clear-bg" class="pm-button" data-i18n="pi.clearImage"></button>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.bgDim">
+			<div class="pm-range" data-setting="bgDim" data-min="0" data-max="90" data-step="1" data-default="40"></div>
+		</sdpi-item>
+
+		<script src="controls.js"></script>
+		<script>
+			const { useSettings, streamDeckClient } = SDPIComponents;
+			const { t } = pttyI18n;
+
+			// Show the fan picker only for the fan metric. style.display rather than `hidden`,
+			// because the component's own :host display style wins over `hidden`.
+			const metric = document.getElementById("metric");
+			const fanItem = document.getElementById("fan-item");
+
+			// Graph units per metric (same as src/metrics.ts; the first is the default) and the default range of
+			// each, shown as placeholders (blank = default). "percent" ranges are limited to 0–100, "actual" ones
+			// are not limited. Internet speed is always an actual value, so it has no choice.
+			const GRAPHS = {
+				"cpu-temp": { actual: "°C", units: { actual: [0, 100], percent: [0, 100] } },
+				"gpu-temp": { actual: "°C", units: { actual: [0, 100], percent: [0, 100] } },
+				"cpu-load": { units: { percent: [0, 100] } },
+				"gpu-load": { units: { percent: [0, 100] } },
+				ram: { actual: "GB", units: { percent: [0, 100], actual: [0, "total"] } },
+				"net-down": { actual: "Mbps", units: { actual: [0, null] } },
+				"net-up": { actual: "Mbps", units: { actual: [0, null] } },
+				fan: { actual: "RPM", units: { actual: [0, null], percent: [0, 100] } },
+			};
+			const graphUnitSelect = document.getElementById("graph-unit");
+			// The saved unit, kept apart from what the select shows: when nothing is saved the select only
+			// displays the metric's default, which must not count as a choice when the metric changes.
+			let savedGraphUnit;
+			let showingDefault = false;
+			const [getGraphUnit, setGraphUnit] = useSettings("graphUnit", (v) => ((savedGraphUnit = v), syncMetric()), 0);
+			getGraphUnit().then((v) => ((savedGraphUnit = v), syncMetric()));
+
+			const syncMetric = () => {
+				const id = metric.value || "cpu-temp";
+				fanItem.style.display = id === "fan" ? "" : "none";
+				document.getElementById("fan-display-item").style.display = id === "fan" ? "" : "none";
+				document.getElementById("ram-items").style.display = id === "ram" ? "" : "none";
+				document.getElementById("detail-size-item").style.display = id === "ram" ? "" : "none";
+
+				// Graph unit: offer the choice only where there is one; keep the stored value valid for this metric.
+				const spec = GRAPHS[id] ?? GRAPHS["cpu-temp"];
+				const units = Object.keys(spec.units);
+				document.getElementById("graph-unit-item").style.display = units.length > 1 ? "" : "none";
+				graphUnitSelect.querySelectorAll("option").forEach((o) => {
+					const text = o.value === "percent" ? t("opt.unitPercent") : t("opt.unitActual", { unit: spec.actual ?? "" });
+					o.replaceWith(new Option(text, o.value)); // replacing makes sdpi-select re-read its items
+				});
+				const stored = savedGraphUnit || undefined;
+				const unit = units.includes(stored) ? stored : units[0];
+				if (graphUnitSelect.value !== unit) {
+					showingDefault = true; // display only; the select's valuechange fires synchronously
+					graphUnitSelect.value = unit;
+					showingDefault = false;
+				}
+				// Save only to correct a saved unit this metric doesn't offer; an unset value already means the default.
+				if (stored !== undefined && stored !== unit) {
+					savedGraphUnit = unit;
+					setGraphUnit(unit);
+				}
+
+				const [min, max] = spec.units[unit];
+				const unitText = unit === "percent" ? "%" : spec.actual;
+				document.querySelector("#graph-min input").placeholder = t("pi.graphDefault", { value: min });
+				document.querySelector("#graph-max input").placeholder =
+					max === null ? t("pi.graphDefaultAuto") : max === "total" ? t("pi.graphDefaultTotal") : t("pi.graphDefault", { value: max });
+				document.getElementById("graph-hint").textContent =
+					t("pi.graphHint", { unit: unitText }) + (unit === "percent" ? " " + t("pi.graphPercentRange") : "");
+
+				// Percent: 0–100 (−5 → 0, 150 → 100). Actual values: no limits.
+				// The mouse wheel on an empty box starts from the default: min from 0, max from 100 in percent
+				// (or the metric's default max), so turning it down on "max" goes 99, 98… instead of starting at 0.
+				const wheelStart = { "graph-min": min, "graph-max": unit === "percent" ? 100 : typeof max === "number" ? max : 0 };
+				for (const box of [document.getElementById("graph-min"), document.getElementById("graph-max")]) {
+					if (unit === "percent") Object.assign(box.dataset, { min: "0", max: "100" });
+					else (delete box.dataset.min, delete box.dataset.max);
+					box.dataset.wheelStart = String(wheelStart[box.id]);
+					// Pull an already saved value back into the new range (blank stays blank).
+					if (box.querySelector("input").value !== "") window.pmControls[box.dataset.setting]?.();
+				}
+				syncPawnIO();
+			};
+			graphUnitSelect.addEventListener("valuechange", () => {
+				if (showingDefault) return;
+				savedGraphUnit = graphUnitSelect.value; // a real choice (the select saves it itself)
+				setTimeout(syncMetric, 0);
+			});
+
+			// --- PawnIO guide: only a hint, shown where the driver matters and the service says it's missing ---
+			let status = null;
+			const pawnioNotice = document.getElementById("pawnio-notice");
+			const syncPawnIO = () => {
+				const relevant = ["cpu-temp", "fan"].includes(metric.value || "cpu-temp");
+				pawnioNotice.style.display = relevant && status?.pawnIO === false ? "" : "none";
+			};
+			const refreshStatus = async () => {
+				const message = await streamDeckClient.get(
+					"sendToPlugin",
+					"sendToPropertyInspector",
+					(m) => m.payload?.event === "getStatus",
+					{ event: "getStatus" },
+				);
+				status = message.payload;
+				syncPawnIO();
+			};
+			document.getElementById("open-pawnio").addEventListener("click", () =>
+				streamDeckClient.send("openUrl", { url: "https://pawnio.eu" }),
+			);
+
+			// Manual colors are only used when automatic coloring is off.
+			const autoColor = document.getElementById("auto-color");
+			const manual = document.getElementById("manual-colors");
+			const syncAuto = () => (manual.style.display = autoColor.value === false ? "" : "none");
+			autoColor.addEventListener("valuechange", syncAuto);
+			syncAuto();
+
+			// sdpi-file has no clear button; reset the setting and reload so the picker shows empty.
+			const [, setBgImage] = useSettings("bgImage");
+			document.getElementById("clear-bg").addEventListener("click", async () => {
+				await setBgImage("");
+				location.reload();
+			});
+
+			// --- Layout window ---------------------------------------------------------------
+			// The window (layout.html) talks to this page with postMessage; this page fetches the
+			// preview from the plugin and saves the positions into the action settings.
+			const LAYOUT_KEYS = [
+				"labelX", "labelY", "labelSize", "valueX", "valueY", "valueSize", "detailX", "detailY", "detailSize",
+				"graphLeft", "graphTop", "graphRight", "graphBottom",
+				"bgScale", "bgOffsetX", "bgOffsetY",
+				"bgCropLeft", "bgCropTop", "bgCropRight", "bgCropBottom",
+			];
+			const layoutSetters = Object.fromEntries(LAYOUT_KEYS.map((key) => [key, useSettings(key, null, 0)[1]]));
+			const saveLayout = async (layout) => {
+				for (const [key, raw] of Object.entries(layout)) {
+					if (!(key in layoutSetters)) continue;
+					const value = raw ?? ""; // null (automatic size) is stored as unset
+					await layoutSetters[key](value);
+					window.pmControls[key]?.(value); // e.g. the label / value size sliders on this page
+				}
+			};
+
+			const requestPreview = async () => {
+				const message = await streamDeckClient.get(
+					"sendToPlugin",
+					"sendToPropertyInspector",
+					(m) => m.payload?.event === "getPreview",
+					{ event: "getPreview" },
+				);
+				return message.payload;
+			};
+
+			let layoutWindow = null;
+			document.getElementById("open-layout").addEventListener("click", () => {
+				if (layoutWindow && !layoutWindow.closed) return layoutWindow.focus();
+				// The page fits itself to whatever size the window ends up (display scaling changes it).
+				layoutWindow = window.open("layout.html", "pcmonitor-layout", "width=520,height=640,resizable=yes");
+			});
+
+			document.getElementById("reset-layout").addEventListener("click", () =>
+				saveLayout(Object.fromEntries(LAYOUT_KEYS.map((key) => [key, ""]))),
+			);
+
+			window.addEventListener("message", async (e) => {
+				const data = e.data || {};
+				if (data.type === "ready" || data.type === "refresh") {
+					e.source.postMessage({ type: "preview", preview: await requestPreview() }, "*");
+				} else if (data.type === "save") {
+					await saveLayout(data.layout);
+					e.source.postMessage({ type: "saved" }, "*");
+				}
+			});
+
+			// --- Startup: translate, then show the page ---------------------------------------
+			const reveal = () => document.body.classList.remove("pending");
+			setTimeout(reveal, 1500); // never stay hidden if Stream Deck is slow to answer
+			pttyI18n
+				.initFromStreamDeck()
+				.catch(() => pttyI18n.apply())
+				.finally(() => {
+					metric.addEventListener("valuechange", syncMetric);
+					document.addEventListener("ptty-language", syncMetric); // texts set from script, not markup
+					syncMetric();
+					reveal();
+					refreshStatus().catch(() => {});
+				});
+		</script>
+	</body>
+</html>

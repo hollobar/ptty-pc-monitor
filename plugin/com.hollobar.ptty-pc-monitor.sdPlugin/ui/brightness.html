@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+	<head>
+		<title>Monitor Brightness Settings</title>
+		<meta charset="utf-8" />
+		<!-- Bundled copy of sdpi-components v4.0.1 so settings work offline (was the sdpi-components.dev CDN). -->
+		<script src="vendor/sdpi-components.js"></script>
+		<script src="locales.js"></script>
+		<script src="i18n.js"></script>
+		<style>
+			/* Hidden until translated, so the untranslated markup doesn't flash. */
+			body.pending {
+				visibility: hidden;
+			}
+		</style>
+	</head>
+
+	<body class="pending">
+		<sdpi-item data-i18n-label="pi.monitor">
+			<sdpi-select setting="monitor" datasource="getMonitors" hot-reload data-i18n-loading="pi.monitorLoading" default="all"></sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.feature">
+			<sdpi-select setting="feature" default="brightness">
+				<option value="brightness" data-i18n="opt.brightness"></option>
+				<option value="contrast" data-i18n="opt.contrast"></option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.step">
+			<div class="pm-range" data-setting="step" data-min="1" data-max="10" data-step="1" data-default="2"></div>
+		</sdpi-item>
+
+		<sdpi-item data-i18n-label="pi.usage">
+			<p style="margin: 0; color: #aaa; font-size: 9pt; line-height: 1.5" data-i18n-html="pi.usageText"></p>
+		</sdpi-item>
+
+		<script src="controls.js"></script>
+		<script>
+			const reveal = () => document.body.classList.remove("pending");
+			setTimeout(reveal, 1500); // never stay hidden if Stream Deck is slow to answer
+			pttyI18n.initFromStreamDeck().catch(() => pttyI18n.apply()).finally(reveal);
+		</script>
+	</body>
+</html>

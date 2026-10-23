@@ -1,0 +1,58 @@
+Installing Ptty PC Monitor (Windows 10/11)
+==========================================
+(한국어: INSTALL.ko.txt)
+
+Requirements
+------------
+- Stream Deck app 7.1 or later
+- This whole folder (extract the zip first; don't run the files from inside the zip)
+
+
+1. Install the sensor service
+-----------------------------
+Double-click install-service.cmd and choose "Yes" in the UAC prompt.
+- It installs to C:\Program Files\Ptty PC Monitor and starts automatically with Windows.
+- When it finishes, the window shows the current CPU / GPU / RAM values.
+- If "Windows protected your PC" appears, click "More info" → "Run anyway"
+  (shown because this personal project is not code-signed).
+
+
+2. Install the Stream Deck plugin
+---------------------------------
+Double-click com.hollobar.ptty-pc-monitor.streamDeckPlugin.
+The Stream Deck app opens and asks to install it. Click "Install".
+Then drag these actions from "Ptty PC Monitor" in the action list:
+- Sensor: for keys
+- Monitor Brightness: for Stream Deck + dials
+
+
+3. (Only if you need it) PawnIO driver
+--------------------------------------
+Reading CPU temperature and motherboard fans (CPU fan, case fans) requires the PawnIO driver.
+Everything else (GPU, load, RAM, internet speed, USB coolers such as NZXT Kraken) works without it.
+- Without it, the CPU temperature key shows "Needs PawnIO" and its settings
+  show a short guide.
+- Install it from https://pawnio.eu; it is picked up automatically within a minute.
+- If you have installed a recent LibreHardwareMonitor, it may already be installed.
+
+
+Language
+--------
+The plugin follows the Stream Deck app language, which follows Windows by default:
+Korean when it is Korean, English for everything else.
+Action names in the action list also follow the Stream Deck app language.
+
+
+Uninstall
+---------
+- Service: run uninstall-service.cmd.
+- Plugin: Stream Deck app → Preferences → Plugins → Ptty PC Monitor → uninstall.
+
+
+Moving to another PC
+--------------------
+- Key layouts and settings move with Stream Deck's profile export / import.
+- Background images are remembered by file path; pick them again on the new PC
+  (or keep the files at the same path).
+- If a chosen font is missing on the new PC, the default font is used.
+- Monitor brightness needs DDC/CI to be enabled in the monitor's on-screen menu.

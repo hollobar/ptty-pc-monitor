@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="ko">
+	<head>
+		<meta charset="utf-8" />
+		<title>Ptty PC Monitor</title>
+		<script src="locales.js"></script>
+		<script src="i18n.js"></script>
+		<style>
+			:root {
+				color-scheme: dark;
+			}
+			/* The window size depends on Windows display scaling and may not be resizable, so everything fits
+			   the window instead of a fixed size: the preview takes the space left after the controls. */
+			html,
+			body {
+				height: 100%;
+				overflow: hidden;
+			}
+			body {
+				margin: 0;
+				background: #2d2d2d;
+				color: #d8d8d8;
+				font: 13px "Malgun Gothic", "Segoe UI", sans-serif;
+			}
+			.wrap {
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+				height: 100%;
+				box-sizing: border-box;
+				padding: 10px 12px;
+			}
+			.hint {
+				flex: none;
+				margin: 0;
+				color: #999;
+				font-size: 12px;
+			}
+			#stage {
+				display: block;
+				flex: 1 1 0;
+				min-height: 100px;
+				width: 100%;
+				touch-action: none;
+				user-select: none;
+			}
+			.drag {
+				cursor: grab;
+			}
+			.drag:active {
+				cursor: grabbing;
+			}
+			.guide {
+				stroke: #fff;
+				stroke-opacity: 0.22;
+				stroke-width: 0.4;
+				stroke-dasharray: 2 2;
+				pointer-events: none;
+			}
+			.key-outline {
+				fill: none;
+				stroke: #777;
+				stroke-width: 0.6;
+				pointer-events: none;
+			}
+			.selection {
+				fill: none;
+				stroke: #4c8cff;
+				stroke-width: 0.8;
+				stroke-dasharray: 3 2;
+				pointer-events: none;
+			}
+			#graph-box {
+				fill: #4c8cff;
+				fill-opacity: 0;
+				stroke: #4c8cff;
+				stroke-opacity: 0;
+				stroke-width: 0.6;
+				stroke-dasharray: 2 2;
+			}
+			.mode-graph #graph-box {
+				fill-opacity: 0.08;
+				stroke-opacity: 0.9;
+			}
+			#crop-box {
+				fill: #fff;
+				fill-opacity: 0;
+				stroke: #fff;
+				stroke-width: 0.8;
+			}
+			/* Each part only reacts in its own mode (label and value share one), so overlapping parts never
+			   steal a drag: e.g. the value text sits right on top of the graph's top edge. */
+			body:not(.mode-bg) #bg-outside,
+			body:not(.mode-bg) #bg-inside,
+			body:not(.mode-graph) #graph-box,
+			.mode-graph #label,
+			.mode-graph #value,
+			.mode-graph #detail,
+			.mode-bg #label,
+			.mode-bg #value,
+			.mode-bg #detail {
+				pointer-events: none;
+			}
+			/* Handles are only shown for the active mode. */
+			.handle {
+				display: none;
+				fill: #fff;
+				stroke: #4c8cff;
+				stroke-width: 0.6;
+			}
+			.mode-graph .handle.graph,
+			.mode-bg .handle.bg,
+			.mode-crop .handle.crop,
+			.mode-label .handle.text,
+			.mode-value .handle.text {
+				display: inline;
+			}
+			.handle.ns {
+				cursor: ns-resize;
+			}
+			.handle.ew {
+				cursor: ew-resize;
+			}
+			.handle.nwse {
+				cursor: nwse-resize;
+			}
+			.handle.nesw {
+				cursor: nesw-resize;
+			}
+			#crop-view {
+				display: none;
+			}
+			.mode-crop #crop-view {
+				display: inline;
+			}
+			.mode-crop #key-view {
+				display: none;
+			}
+			.panel {
+				flex: none;
+			}
+			.row {
+				display: flex;
+				gap: 6px;
+				align-items: center;
+				flex-wrap: wrap;
+			}
+			.row + .row {
+				margin-top: 6px;
+			}
+			.field {
+				display: flex;
+				gap: 4px;
+				align-items: center;
+			}
+			input[type="number"] {
+				width: 62px;
+				padding: 3px 4px;
+				border: 1px solid #555;
+				border-radius: 3px;
+				background: #3d3d3d;
+				color: #d8d8d8;
+			}
+			button {
+				padding: 4px 10px;
+				border: 1px solid #555;
+				border-radius: 3px;
+				background: #3d3d3d;
+				color: #d8d8d8;
+				cursor: pointer;
+			}
+			button:hover:not(:disabled) {
+				color: #fff;
+			}
+			button:disabled {
+				opacity: 0.4;
+				cursor: default;
+			}
+			button.primary {
+				border-color: #2f6fe0;
+				background: #2f6fe0;
+				color: #fff;
+			}
+			.seg button[aria-pressed="true"] {
+				border-color: #4c8cff;
+				color: #fff;
+			}
+			.actions {
+				flex: none;
+				display: flex;
+				justify-content: flex-end;
+				gap: 8px;
+			}
+			#status {
+				flex: 1;
+				align-self: center;
+				color: #999;
+				font-size: 12px;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div class="wrap">
+			<p class="hint" id="hint"></p>
+
+			<!-- Scales to the space available (viewBox + default "meet"), keeping the key square. -->
+			<svg id="stage" viewBox="-36 -36 216 216" xmlns="http://www.w3.org/2000/svg">
+				<defs>
+					<clipPath id="key-clip"><rect width="144" height="144" rx="14" /></clipPath>
+					<!-- The svg is letterboxed in a non-square window; keep the faded image inside the preview frame. -->
+					<clipPath id="stage-clip"><rect x="-36" y="-36" width="216" height="216" rx="4" /></clipPath>
+				</defs>
+				<rect x="-36" y="-36" width="216" height="216" rx="4" fill="#1a1a1a" pointer-events="none" />
+
+				<g id="key-view">
+					<!-- Background image as nested svgs: their viewBox is the crop rectangle in thumbnail pixels.
+					     The faded copy shows the part outside the key, so it can be dragged back in. -->
+					<g clip-path="url(#stage-clip)">
+						<svg id="bg-outside" class="drag bg-image" opacity="0.3" preserveAspectRatio="none"><image /></svg>
+					</g>
+					<g clip-path="url(#key-clip)">
+						<rect id="bg-color" width="144" height="144" />
+						<svg id="bg-inside" class="drag bg-image" preserveAspectRatio="none"><image /></svg>
+						<rect id="bg-dim" width="144" height="144" fill="#000" pointer-events="none" />
+						<polygon id="graph-fill" pointer-events="none" />
+						<polyline id="graph-line" fill="none" stroke-width="2" stroke-opacity="0.8" pointer-events="none" />
+					</g>
+					<rect class="key-outline" width="144" height="144" rx="14" />
+					<line class="guide" x1="72" y1="0" x2="72" y2="144" />
+					<line class="guide" x1="0" y1="72" x2="144" y2="72" />
+
+					<rect id="graph-box" class="drag" />
+
+					<g id="label" class="drag"><text text-anchor="middle" font-weight="700"></text></g>
+					<g id="value" class="drag">
+						<text id="value-text" text-anchor="middle"><tspan font-weight="700"></tspan><tspan font-weight="600" dx="2"></tspan></text>
+					</g>
+					<!-- Second line (e.g. RAM "51% / 32GB"): follows the value until it is dragged on its own. -->
+					<g id="detail" class="drag"><text id="detail-text" text-anchor="middle" fill-opacity="0.75"></text></g>
+					<rect id="selection" class="selection" />
+
+					<g id="handles"></g>
+				</g>
+
+				<!-- Crop mode: the whole image, with the kept part outlined. -->
+				<g id="crop-view">
+					<image id="crop-image" preserveAspectRatio="none" />
+					<path id="crop-shade" fill="#000" fill-opacity="0.6" fill-rule="evenodd" pointer-events="none" />
+					<rect id="crop-box" class="drag" />
+					<g id="crop-handles"></g>
+				</g>
+			</svg>
+
+			<div class="panel">
+				<div class="row seg">
+					<button data-mode="label" data-i18n="layout.modeLabel"></button>
+					<button data-mode="value" data-i18n="layout.modeValue"></button>
+					<button data-mode="graph" data-i18n="layout.modeGraph"></button>
+					<button data-mode="bg" data-i18n="layout.modeBg"></button>
+					<button data-mode="crop" data-i18n="layout.modeCrop"></button>
+				</div>
+				<div class="row" id="fields"></div>
+				<div class="row" id="tools"></div>
+			</div>
+
+			<!-- No Save button: changes are saved automatically (Elgato's property inspector guideline). -->
+			<div class="actions">
+				<span id="status" data-i18n="layout.loading"></span>
+				<button id="refresh" data-i18n="layout.refresh"></button>
+				<button id="cancel" data-i18n="layout.close"></button>
+			</div>
+		</div>
+
+		<script>
+			// Opened by sensor.html via window.open. The opener fetches the preview from the plugin and saves the
+			// layout into the action settings; all communication goes through postMessage.
+			// window.parent covers being embedded in a frame (used for testing outside Stream Deck).
+			const opener = window.opener || (window.parent !== window ? window.parent : null);
+			const SVG_NS = "http://www.w3.org/2000/svg";
+			const $ = (id) => document.getElementById(id);
+			const stage = $("stage");
+			const status = $("status");
+
+			const MIN_SPAN = 4;
+			/** Area the whole image is fitted into in crop mode (key units). */
+			const CROP_VIEW = { x: -28, y: -28, size: 200 };
+
+			/** Current layout: positions in key pixels (the key is 144x144), sizes in key pixels (null = automatic),
+			 *  bgScale and the bgCrop* values in percent. */
+			let L = {};
+			let defaults = {};
+			let preview = null;
+			let mode = "label";
+			/** In value mode: "main" = the big value, "detail" = its second line. */
+			let valuePart = "main";
+
+			const { t } = pttyI18n;
+
+			// hint / field labels are translation keys ("X" and "Y" are used as-is).
+			const MODES = {
+				label: {
+					hint: "layout.hintLabel",
+					fields: [["X", "labelX"], ["Y", "labelY"], ["layout.size", "labelSize"]],
+					keys: ["labelX", "labelY", "labelSize"],
+				},
+				value: {
+					hint: "layout.hintValue",
+					// The value mode edits either the big value or its second line (see valuePart).
+					fields: () =>
+						valuePart === "detail"
+							? [["X", "detailX"], ["Y", "detailY"], ["layout.size", "detailSize"]]
+							: [["X", "valueX"], ["Y", "valueY"], ["layout.size", "valueSize"]],
+					keys: ["valueX", "valueY", "valueSize", "detailX", "detailY", "detailSize"],
+				},
+				graph: {
+					hint: "layout.hintGraph",
+					fields: [["layout.top", "graphTop"], ["layout.bottom", "graphBottom"], ["layout.left", "graphLeft"], ["layout.right", "graphRight"]],
+					keys: ["graphLeft", "graphTop", "graphRight", "graphBottom"],
+				},
+				bg: {
+					hint: "layout.hintBg",
+					fields: [["layout.moveX", "bgOffsetX"], ["layout.moveY", "bgOffsetY"], ["layout.scale", "bgScale"]],
+					keys: ["bgOffsetX", "bgOffsetY", "bgScale"],
+				},
+				crop: {
+					hint: "layout.hintCrop",
+					fields: [["layout.cropLeft", "bgCropLeft"], ["layout.cropTop", "bgCropTop"], ["layout.cropRight", "bgCropRight"], ["layout.cropBottom", "bgCropBottom"]],
+					keys: ["bgCropLeft", "bgCropTop", "bgCropRight", "bgCropBottom"],
+				},
+			};
+
+			// --- Constraints ---------------------------------------------------------------
+			const isCrop = (key) => key.startsWith("bgCrop");
+			const round = (key, v) => (isCrop(key) ? Math.round(v * 10) / 10 : Math.round(v));
+			const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+			function setValue(key, raw) {
+				// Sizes may be cleared back to automatic, and the second line back to following the value.
+				if (["labelSize", "valueSize", "detailSize", "detailX", "detailY"].includes(key) && (raw === "" || raw === null)) {
+					L[key] = null;
+					return;
+				}
+				let v = round(key, Number(raw));
+				if (!Number.isFinite(v)) return;
+				switch (key) {
+					case "labelSize": v = clamp(v, 6, 100); break;
+					case "valueSize": v = clamp(v, 6, 120); break;
+					case "detailSize": v = clamp(v, 6, 80); break;
+					case "bgScale": v = clamp(v, 10, 500); break;
+					case "bgOffsetX":
+					case "bgOffsetY": v = clamp(v, -432, 432); break;
+					case "graphTop": v = clamp(v, 0, L.graphBottom - MIN_SPAN); break;
+					case "graphBottom": v = clamp(v, L.graphTop + MIN_SPAN, 144); break;
+					case "graphLeft": v = clamp(v, 0, L.graphRight - MIN_SPAN); break;
+					case "graphRight": v = clamp(v, L.graphLeft + MIN_SPAN, 144); break;
+					case "bgCropLeft": v = clamp(v, 0, L.bgCropRight - 1); break;
+					case "bgCropRight": v = clamp(v, L.bgCropLeft + 1, 100); break;
+					case "bgCropTop": v = clamp(v, 0, L.bgCropBottom - 1); break;
+					case "bgCropBottom": v = clamp(v, L.bgCropTop + 1, 100); break;
+					default: v = clamp(v, 0, 144);
+				}
+				L[key] = v;
+			}
+
+			/** Moves a rectangle (four keys) keeping its size, within [min, max] on both axes. */
+			function moveRect(keys, dx, dy, origin, min, max) {
+				const [l, t, r, b] = keys;
+				const w = origin[r] - origin[l];
+				const h = origin[b] - origin[t];
+				const left = round(l, clamp(origin[l] + dx, min, max - w));
+				const top = round(t, clamp(origin[t] + dy, min, max - h));
+				Object.assign(L, { [l]: left, [r]: round(r, left + w), [t]: top, [b]: round(b, top + h) });
+			}
+			const GRAPH_KEYS = ["graphLeft", "graphTop", "graphRight", "graphBottom"];
+			const CROP_KEYS = ["bgCropLeft", "bgCropTop", "bgCropRight", "bgCropBottom"];
+
+			// --- Geometry ----------------------------------------------------------------------
+			const labelSize = () => L.labelSize ?? preview.autoSizes.label;
+			const valueSize = () => L.valueSize ?? preview.autoSizes.value;
+			/** Same derived sizes as the plugin's renderer (textMetrics in render.ts). */
+			const valueParts = (size) => ({
+				unit: Math.round(size * 0.4),
+				detail: Math.max(10, Math.round(size * 0.34)),
+				offset: Math.round(size * 0.68),
+			});
+			/** Second-line size: its own, or scaled with the value (same rule as render.ts). */
+			const autoDetailSize = () => valueParts(valueSize()).detail;
+			const detailSize = () => L.detailSize ?? autoDetailSize();
+			/** Current size of a text part, for the size handle and the mouse wheel. */
+			const sizeOf = (key) => (key === "labelSize" ? labelSize() : key === "valueSize" ? valueSize() : detailSize());
+			/** Where the second line is drawn: its own position, or under the value while it follows it. */
+			const detailPos = () => ({
+				x: L.detailX ?? L.valueX,
+				y: L.detailY ?? Math.min(142, L.valueY + valueParts(valueSize()).offset),
+			});
+			/** Gives the second line its own position (from where it is now) before it is moved on its own. */
+			const detachDetail = () => Object.assign(L, { detailX: detailPos().x, detailY: detailPos().y });
+
+			/** The cropped part of the thumbnail, in thumbnail pixels. */
+			function cropPixels() {
+				const { width: w, height: h } = preview.background;
+				return {
+					x: (w * L.bgCropLeft) / 100,
+					y: (h * L.bgCropTop) / 100,
+					width: (w * (L.bgCropRight - L.bgCropLeft)) / 100,
+					height: (h * (L.bgCropBottom - L.bgCropTop)) / 100,
+				};
+			}
+
+			/** Where the (cropped) background sits on the key, in key units — same math as the helper. */
+			function backgroundRect() {
+				if (!preview?.background) return null;
+				const crop = cropPixels();
+				const s = (144 / Math.min(crop.width, crop.height)) * (L.bgScale / 100);
+				const w = crop.width * s;
+				const h = crop.height * s;
+				return { x: 72 + L.bgOffsetX - w / 2, y: 72 + L.bgOffsetY - h / 2, width: w, height: h };
+			}
+
+			/** Whole image fitted into the crop view. */
+			function cropView() {
+				const { width: w, height: h } = preview.background;
+				const s = CROP_VIEW.size / Math.max(w, h);
+				const dw = w * s;
+				const dh = h * s;
+				return { x: CROP_VIEW.x + (CROP_VIEW.size - dw) / 2, y: CROP_VIEW.y + (CROP_VIEW.size - dh) / 2, width: dw, height: dh };
+			}
+
+			// --- Drawing -----------------------------------------------------------------------
+			const attrs = (el, values) => Object.entries(values).forEach(([k, v]) => el.setAttribute(k, v));
+
+			function handle(parent, cls, x, y, w, h, onDrag) {
+				const el = document.createElementNS(SVG_NS, "rect");
+				attrs(el, { class: `handle ${cls}`, x: x - w / 2, y: y - h / 2, width: w, height: h, rx: 1.5 });
+				parent.appendChild(el);
+				draggable(el, onDrag);
+			}
+
+			function draw() {
+				if (!preview) return;
+				drawKeyView();
+				if (preview.background) drawCropView();
+
+				document.querySelectorAll("#fields input").forEach((input) => {
+					if (document.activeElement === input) return;
+					const key = input.dataset.key;
+					// The second line shows where it is drawn even while it follows the value.
+					const shown = key === "detailX" ? detailPos().x : key === "detailY" ? detailPos().y : L[key];
+					input.value = shown ?? "";
+				});
+				scheduleSave();
+			}
+
+			// --- Auto-save -----------------------------------------------------------------------
+			// Every change is saved shortly after it settles; during a drag, once the pointer is released.
+			let savedLayout = "";
+			let saveTimer = null;
+			function scheduleSave() {
+				if (activeDrag || JSON.stringify(L) === savedLayout) return;
+				clearTimeout(saveTimer);
+				status.textContent = t("layout.changed");
+				saveTimer = setTimeout(() => {
+					savedLayout = JSON.stringify(L);
+					opener.postMessage({ type: "save", layout: { ...L } }, "*");
+				}, 400);
+			}
+
+			function drawKeyView() {
+				const bgRect = backgroundRect();
+				const crop = bgRect && cropPixels();
+				for (const id of ["bg-outside", "bg-inside"]) {
+					$(id).style.display = bgRect ? "" : "none";
+					if (bgRect) attrs($(id), { ...bgRect, viewBox: `${crop.x} ${crop.y} ${crop.width} ${crop.height}` });
+				}
+				$("bg-dim").setAttribute("fill-opacity", bgRect ? preview.bgDim : 0);
+
+				// Graph, same mapping as the plugin's renderer.
+				const { ratios, line, fill, fillOpacity } = preview.graph;
+				const { graphLeft: l, graphTop: t, graphRight: r, graphBottom: b } = L;
+				if (ratios.length >= 2) {
+					const step = (r - l) / (ratios.length - 1);
+					const pts = ratios.map((v, i) => `${(l + i * step).toFixed(1)},${(b - v * (b - t)).toFixed(1)}`).join(" ");
+					attrs($("graph-fill"), { points: `${l},${b} ${pts} ${r},${b}`, fill, "fill-opacity": fillOpacity });
+					attrs($("graph-line"), { points: pts, stroke: line });
+				}
+				attrs($("graph-box"), { x: l, y: t, width: r - l, height: b - t });
+
+				// Text.
+				attrs(document.querySelector("#label text"), { x: L.labelX, y: L.labelY, "font-size": labelSize() });
+				const vp = valueParts(valueSize());
+				const valueText = $("value-text");
+				attrs(valueText, { x: L.valueX, y: L.valueY });
+				valueText.children[0].setAttribute("font-size", valueSize());
+				valueText.children[1].setAttribute("font-size", vp.unit);
+				const dp = detailPos();
+				attrs($("detail-text"), { x: dp.x, y: dp.y, "font-size": detailSize() });
+
+				// Selection outline.
+				let box = null;
+				if (mode === "label") box = $("label").getBBox();
+				else if (mode === "value") box = $(valuePart === "detail" ? "detail" : "value").getBBox();
+				else if (mode === "bg") box = bgRect;
+				const sel = $("selection");
+				sel.style.display = box ? "" : "none";
+				if (box) attrs(sel, { x: box.x - 2, y: box.y - 2, width: box.width + 4, height: box.height + 4 });
+
+				// Handles for the current mode (rebuilt each draw; cheap at this size).
+				const handles = $("handles");
+				if (activeDrag?.parentNode === handles) return; // keep the element being dragged
+				handles.innerHTML = "";
+				if (mode === "graph") {
+					handle(handles, "graph ns", (l + r) / 2, t, 16, 6, edgeDrag("graphTop", "y"));
+					handle(handles, "graph ns", (l + r) / 2, b, 16, 6, edgeDrag("graphBottom", "y"));
+					handle(handles, "graph ew", l, (t + b) / 2, 6, 16, edgeDrag("graphLeft", "x"));
+					handle(handles, "graph ew", r, (t + b) / 2, 6, 16, edgeDrag("graphRight", "x"));
+				} else if ((mode === "label" || mode === "value") && box) {
+					// Bottom-right corner: drag down to enlarge, up to shrink. Value and second line resize separately.
+					handle(handles, "text nwse", box.x + box.width + 2, box.y + box.height + 2, 7, 7, textSizeDrag(partPrefix() + "Size", box.height));
+				} else if (mode === "bg" && bgRect) {
+					const cx = bgRect.x + bgRect.width / 2;
+					const cy = bgRect.y + bgRect.height / 2;
+					for (const [x, y, cls] of [
+						[bgRect.x, bgRect.y, "nwse"],
+						[bgRect.x + bgRect.width, bgRect.y, "nesw"],
+						[bgRect.x, bgRect.y + bgRect.height, "nesw"],
+						[bgRect.x + bgRect.width, bgRect.y + bgRect.height, "nwse"],
+					]) {
+						handle(handles, `bg ${cls}`, x, y, 7, 7, scaleDrag(cx, cy));
+					}
+				}
+			}
+
+			function drawCropView() {
+				const view = cropView();
+				attrs($("crop-image"), view);
+				const box = {
+					x: view.x + (view.width * L.bgCropLeft) / 100,
+					y: view.y + (view.height * L.bgCropTop) / 100,
+					width: (view.width * (L.bgCropRight - L.bgCropLeft)) / 100,
+					height: (view.height * (L.bgCropBottom - L.bgCropTop)) / 100,
+				};
+				attrs($("crop-box"), box);
+				// Darken everything outside the crop box (outer rect minus inner rect, even-odd).
+				$("crop-shade").setAttribute(
+					"d",
+					`M${view.x},${view.y}h${view.width}v${view.height}h${-view.width}z` +
+						`M${box.x},${box.y}h${box.width}v${box.height}h${-box.width}z`,
+				);
+
+				const handles = $("crop-handles");
+				if (activeDrag?.parentNode === handles) return;
+				handles.innerHTML = "";
+				const [x0, x1, y0, y1] = [box.x, box.x + box.width, box.y, box.y + box.height];
+				const xm = (x0 + x1) / 2;
+				const ym = (y0 + y1) / 2;
+				const perX = 100 / view.width;
+				const perY = 100 / view.height;
+				const edges = (keys) => cropEdgeDrag(keys, perX, perY);
+				handle(handles, "crop nwse", x0, y0, 7, 7, edges(["bgCropLeft", "bgCropTop"]));
+				handle(handles, "crop ns", xm, y0, 12, 5, edges(["bgCropTop"]));
+				handle(handles, "crop nesw", x1, y0, 7, 7, edges(["bgCropRight", "bgCropTop"]));
+				handle(handles, "crop ew", x1, ym, 5, 12, edges(["bgCropRight"]));
+				handle(handles, "crop nwse", x1, y1, 7, 7, edges(["bgCropRight", "bgCropBottom"]));
+				handle(handles, "crop ns", xm, y1, 12, 5, edges(["bgCropBottom"]));
+				handle(handles, "crop nesw", x0, y1, 7, 7, edges(["bgCropLeft", "bgCropBottom"]));
+				handle(handles, "crop ew", x0, ym, 5, 12, edges(["bgCropLeft"]));
+			}
+
+			// --- Drag behaviours ------------------------------------------------------------------
+			const edgeDrag = (key, axis) => (dx, dy, o) => setValue(key, o[key] + (axis === "y" ? dy : dx));
+
+			/** Font size follows the vertical drag relative to the text's height when the drag started. */
+			const textSizeDrag = (key, startHeight) => {
+				const start = sizeOf(key); // size when the handle was created, i.e. at drag start
+				return (dx, dy) => setValue(key, start * Math.max(0.1, (startHeight + dy) / startHeight));
+			};
+
+			/** Image scale follows the pointer's distance from the image center. */
+			const scaleDrag = (cx, cy) => (dx, dy, o, start) => {
+				const d0 = Math.hypot(start.x - cx, start.y - cy) || 1;
+				const d1 = Math.hypot(start.x + dx - cx, start.y + dy - cy);
+				setValue("bgScale", (o.bgScale * d1) / d0);
+			};
+
+			const cropEdgeDrag = (keys, perX, perY) => (dx, dy, o) => {
+				for (const key of keys) {
+					const horizontal = key === "bgCropLeft" || key === "bgCropRight";
+					setValue(key, o[key] + (horizontal ? dx * perX : dy * perY));
+				}
+			};
+
+			// --- Dragging (in key coordinates) -------------------------------------------------
+			let activeDrag = null;
+
+			function toKey(e) {
+				const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(stage.getScreenCTM().inverse());
+				return { x: p.x, y: p.y };
+			}
+
+			function draggable(el, onDrag, onStart) {
+				el.addEventListener("pointerdown", (e) => {
+					e.stopPropagation();
+					onStart?.();
+					el.setPointerCapture(e.pointerId);
+					activeDrag = el;
+					const start = toKey(e);
+					const origin = { ...L };
+					const move = (ev) => {
+						const p = toKey(ev);
+						onDrag(p.x - start.x, p.y - start.y, origin, start);
+						draw();
+					};
+					const up = () => {
+						el.removeEventListener("pointermove", move);
+						el.removeEventListener("pointerup", up);
+						activeDrag = null;
+						draw();
+					};
+					el.addEventListener("pointermove", move);
+					el.addEventListener("pointerup", up);
+				});
+			}
+
+			const select = (target) => () => mode !== target && setMode(target);
+			const selectPart = (part) => () => {
+				if (mode === "value" && valuePart === part) return;
+				valuePart = part;
+				setMode("value");
+			};
+			draggable($("label"), (dx, dy, o) => (setValue("labelX", o.labelX + dx), setValue("labelY", o.labelY + dy)), select("label"));
+			draggable($("value"), (dx, dy, o) => (setValue("valueX", o.valueX + dx), setValue("valueY", o.valueY + dy)), selectPart("main"));
+			draggable(
+				$("detail"),
+				(dx, dy, o) => (setValue("detailX", o.detailX + dx), setValue("detailY", o.detailY + dy)),
+				() => (selectPart("detail")(), detachDetail()),
+			);
+			draggable($("graph-box"), (dx, dy, o) => moveRect(GRAPH_KEYS, dx, dy, o, 0, 144));
+			for (const id of ["bg-outside", "bg-inside"]) {
+				draggable($(id), (dx, dy, o) => (setValue("bgOffsetX", o.bgOffsetX + dx), setValue("bgOffsetY", o.bgOffsetY + dy)));
+			}
+			draggable($("crop-box"), (dx, dy, o) => {
+				const view = cropView();
+				moveRect(CROP_KEYS, (dx * 100) / view.width, (dy * 100) / view.height, o, 0, 100);
+			});
+
+			// Mouse wheel over the preview: image size in bg mode, font size in text modes.
+			stage.addEventListener(
+				"wheel",
+				(e) => {
+					const up = e.deltaY < 0;
+					if (mode === "bg") setValue("bgScale", L.bgScale + (up ? 5 : -5));
+					else if (mode === "label" || mode === "value") {
+						const key = partPrefix() + "Size";
+						setValue(key, sizeOf(key) + (up ? 1 : -1));
+					} else return;
+					e.preventDefault();
+					draw();
+				},
+				{ passive: false },
+			);
+
+			// Arrow keys nudge the selected part.
+			window.addEventListener("keydown", (e) => {
+				if (e.target instanceof HTMLInputElement || !preview) return;
+				const d = e.shiftKey ? 5 : 1;
+				const delta = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
+				if (!delta) return;
+				e.preventDefault();
+				const [dx, dy] = delta;
+				if (mode === "graph") moveRect(GRAPH_KEYS, dx, dy, { ...L }, 0, 144);
+				else if (mode === "crop") moveRect(CROP_KEYS, dx, dy, { ...L }, 0, 100);
+				else if (mode === "bg") (setValue("bgOffsetX", L.bgOffsetX + dx), setValue("bgOffsetY", L.bgOffsetY + dy));
+				else {
+					const prefix = partPrefix();
+					if (prefix === "detail") detachDetail();
+					setValue(prefix + "X", L[prefix + "X"] + dx);
+					setValue(prefix + "Y", L[prefix + "Y"] + dy);
+				}
+				draw();
+			});
+
+			/** Settings prefix of the text being edited: "label", "value" or "detail". */
+			const partPrefix = () => (mode === "value" && valuePart === "detail" ? "detail" : mode);
+
+			// --- Modes and controls ----------------------------------------------------------------
+			function setMode(next) {
+				if ((next === "bg" || next === "crop") && !preview?.background) return;
+				mode = next;
+				document.body.className = `mode-${mode}`;
+				$("hint").textContent = t(MODES[mode].hint);
+				document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === mode));
+
+				const fields = $("fields");
+				fields.innerHTML = "";
+				// Value mode: pick the big value or its second line (only when there is a second line).
+				if (mode === "value" && preview?.detail) {
+					const parts = document.createElement("div");
+					parts.className = "row seg";
+					const mainName = preview.metric === "ram" ? "layout.partUsage" : "layout.partValue";
+					for (const [part, key] of [["main", mainName], ["detail", "layout.partDetail"]]) {
+						const b = document.createElement("button");
+						b.textContent = t(key);
+						b.setAttribute("aria-pressed", valuePart === part);
+						b.addEventListener("click", selectPart(part));
+						parts.appendChild(b);
+					}
+					fields.appendChild(parts);
+				} else if (mode === "value") {
+					valuePart = "main";
+				}
+				const fieldSpec = typeof MODES[mode].fields === "function" ? MODES[mode].fields() : MODES[mode].fields;
+				for (const [label, key] of fieldSpec) {
+					const wrap = document.createElement("label");
+					wrap.className = "field";
+					wrap.innerHTML = `<span></span><input type="number">`;
+					wrap.querySelector("span").textContent = label.includes(".") ? t(label) : label;
+					const input = wrap.querySelector("input");
+					input.dataset.key = key;
+					input.step = isCrop(key) ? "0.1" : "1";
+					if (key === "labelSize" || key === "valueSize") {
+						input.placeholder = t("layout.sizeAuto", { value: preview?.autoSizes[key === "labelSize" ? "label" : "value"] ?? "" });
+					} else if (key === "detailSize") {
+						input.placeholder = t("layout.sizeAuto", { value: autoDetailSize() });
+					}
+					input.addEventListener("change", () => {
+						// Typing one coordinate of the second line pins both, so the other doesn't jump.
+						if ((key === "detailX" || key === "detailY") && input.value !== "") detachDetail();
+						setValue(key, input.value);
+						draw();
+					});
+					input.addEventListener(
+						"wheel",
+						(e) => {
+							e.preventDefault();
+							const step = key === "bgScale" ? 5 : 1;
+							if (key === "detailX" || key === "detailY") detachDetail();
+							const current = key.endsWith("Size") && key !== "bgScale" ? sizeOf(key) : L[key];
+							setValue(key, current + (e.deltaY < 0 ? step : -step));
+							draw();
+						},
+						{ passive: false },
+					);
+					fields.appendChild(wrap);
+				}
+
+				const tools = $("tools");
+				tools.innerHTML = "";
+				const tool = (key, fn) => {
+					const b = document.createElement("button");
+					b.textContent = t(key);
+					b.addEventListener("click", () => {
+						fn();
+						draw();
+					});
+					tools.appendChild(b);
+				};
+				// X/Y-axis centering: the part's visual center goes to the key's center line (72).
+				if (mode === "label" || mode === "value") {
+					const prefix = partPrefix();
+					const element = prefix === "detail" ? "detail" : mode;
+					tool("layout.centerX", () => {
+						if (prefix === "detail") detachDetail();
+						L[prefix + "X"] = 72; // text is anchored at its horizontal middle
+					});
+					tool("layout.centerY", () => {
+						if (prefix === "detail") detachDetail();
+						// y is the text baseline, so center by the drawn box.
+						const box = $(element).getBBox();
+						setValue(prefix + "Y", L[prefix + "Y"] + 72 - (box.y + box.height / 2));
+					});
+					tool("layout.autoSize", () => (L[prefix + "Size"] = null));
+					if (prefix === "detail") tool("layout.attachDetail", () => Object.assign(L, { detailX: null, detailY: null }));
+				}
+				if (mode === "graph") {
+					tool("layout.fullWidth", () => Object.assign(L, { graphLeft: 0, graphRight: 144 }));
+					tool("layout.bottomHalf", () => Object.assign(L, { graphTop: 70, graphBottom: 144 }));
+					tool("layout.wholeKey", () => Object.assign(L, { graphLeft: 0, graphTop: 0, graphRight: 144, graphBottom: 144 }));
+				}
+				if (mode === "bg") {
+					tool("layout.centerX", () => (L.bgOffsetX = 0));
+					tool("layout.centerY", () => (L.bgOffsetY = 0));
+					tool("layout.fill", () => (L.bgScale = 100));
+				}
+				if (mode === "crop") {
+					tool("layout.uncrop", () => Object.assign(L, { bgCropLeft: 0, bgCropTop: 0, bgCropRight: 100, bgCropBottom: 100 }));
+					tool("layout.square", () => {
+						const { width: w, height: h } = preview.background;
+						const side = Math.min(w, h);
+						const mx = ((w - side) / 2 / w) * 100;
+						const my = ((h - side) / 2 / h) * 100;
+						Object.assign(L, { bgCropLeft: round("bgCropLeft", mx), bgCropRight: round("bgCropRight", 100 - mx), bgCropTop: round("bgCropTop", my), bgCropBottom: round("bgCropBottom", 100 - my) });
+					});
+				}
+				tool("layout.defaults", () => MODES[mode].keys.forEach((k) => (L[k] = defaults[k])));
+				draw();
+			}
+
+			function apply(p) {
+				// The plugin sends the resolved display language with the preview.
+				pttyI18n.setLanguage(p.lang);
+				document.title = `Ptty PC Monitor · ${t("layout.title")}`;
+				preview = p;
+				L = { ...p.layout };
+				savedLayout = JSON.stringify(L);
+				defaults = p.defaults;
+
+				attrs($("bg-color"), { fill: p.bgColor });
+				if (p.background) {
+					const href = `data:image/png;base64,${p.background.png}`;
+					document.querySelectorAll(".bg-image image").forEach((img) =>
+						attrs(img, { href, width: p.background.width, height: p.background.height }),
+					);
+					$("crop-image").setAttribute("href", href);
+				}
+				for (const m of ["bg", "crop"]) document.querySelector(`.seg [data-mode="${m}"]`).disabled = !p.background;
+
+				const labelText = document.querySelector("#label text");
+				attrs(labelText, { "font-family": p.label.font, fill: p.label.color });
+				labelText.textContent = p.label.text;
+
+				const valueText = $("value-text");
+				attrs(valueText, { "font-family": p.value.font, fill: p.value.color });
+				valueText.children[0].textContent = p.value.text;
+				valueText.children[1].textContent = p.value.unit;
+
+				const detailText = $("detail-text");
+				detailText.textContent = p.detail ? p.detail.text : "";
+				if (p.detail) attrs(detailText, { "font-family": p.detail.font, fill: p.detail.color });
+				$("detail").style.display = p.detail ? "" : "none";
+				if (!p.detail) valuePart = "main";
+
+				setMode((mode === "bg" || mode === "crop") && !p.background ? "label" : mode);
+				status.textContent = "";
+			}
+
+			document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+
+			$("refresh").addEventListener("click", () => {
+				status.textContent = t("layout.loading");
+				opener.postMessage({ type: "refresh" }, "*");
+			});
+			$("cancel").addEventListener("click", () => window.close());
+
+			window.addEventListener("message", (e) => {
+				const data = e.data || {};
+				if (data.type === "preview") apply(data.preview);
+				else if (data.type === "saved") status.textContent = t("layout.saved");
+			});
+
+			// Until the preview arrives with the language, show the page in the browser's language.
+			pttyI18n.setLanguage((navigator.language || "en").slice(0, 2));
+			document.body.className = "mode-label";
+			$("hint").textContent = t(MODES.label.hint);
+			if (opener) opener.postMessage({ type: "ready" }, "*");
+			else status.textContent = t("layout.noOpener");
+		</script>
+	</body>
+</html>
